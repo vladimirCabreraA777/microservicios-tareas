@@ -1,1 +1,19 @@
+name: CI/CD Simple
 
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Mostrar mensaje
+        run: echo "Pipeline ejecutándose correctamente"
+
+      - name: Listar archivos
+        run: ls -la
+
+      - name: Todo bien
+        run: echo "CI/CD funcionando sin errores"
