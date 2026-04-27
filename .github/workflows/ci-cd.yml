@@ -1,19 +1,130 @@
-name: CI/CD Simple
+name: CI/CD Microservicios con IA
 
-on: [push]
+# Cuándo se ejecuta
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
 
+# Variables de entorno
+env:
+  DOTNET_VERSION: '8.0.x'
+  DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+
+# Jobs (tareas)
 jobs:
-  build:
+
+  # ========================================
+  # JOB 1: CI - Pruebas
+  # ========================================
+  test:
+    name: 🔍 CI - Pruebas automáticas
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout código
+      # 1. Descargar código
+      - name: 📥 Checkout código
         uses: actions/checkout@v4
+      
+      # 2. Configurar .NET
+      - name: ⚙️ Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      
+      # 3. Restaurar dependencias
+      - name: 📦 Restaurar paquetes
+        run: dotnet restore
+      
+      # 4. Compilar código
+      - name: 🔨 Compilar
+        run: dotnet build --configuration Release --no-restore
+      
+      # 5. Ejecutar pruebas unitarias
+      - name: 🧪 Ejecutar pruebas
+        run: dotnet test --no-build --verbosity normal
+      
+      # 6. Verificar formato de código
+      - name: ✨ Verificar formato
+        run: dotnet format --verify-no-changes
 
-      - name: Mostrar mensaje
-        run: echo "Pipeline ejecutándose correctamente"
+  # ========================================
+  # JOB 2: BUILD - Crear imágenes Docker
+  # ========================================
+  build:
+    name: 🐳 BUILD - Crear imágenes Docker
+    runs-on: ubuntu-latest
+    needs: test  # Solo si las pruebas pasan
+    
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v4
+      
+      # Login a Docker Hub
+      - name: 🔐 Login a Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      # Build y push de Task Service
+      - name: 🏗️ Build Task Service
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/task-service:latest ./task-service
+          docker push ${{ secrets.DOCKER_USERNAME }}/task-service:latest
+      
+      # Build y push de AI Service
+      - name: 🤖 Build AI Service
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/ai-service:latest ./ai-service
+          docker push ${{ secrets.DOCKER_USERNAME }}/ai-service:latest
+      
+      # Build y push de API Gateway
+      - name: 🌐 Build API Gateway
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/api-gateway:latest ./api-gateway
+          docker push ${{ secrets.DOCKER_USERNAME }}/api-gateway:latest
 
-      - name: Listar archivos
-        run: ls -la
-
-      - name: Todo bien
-        run: echo "CI/CD funcionando sin errores"
+  # ========================================
+  # JOB 3: DEPLOY - Desplegar en Kubernetes
+  # ========================================
+  deploy:
+    name: ☸️ DEPLOY - Desplegar en Kubernetes
+    runs-on: ubuntu-latest
+    needs: build  # Solo si las imágenes se crearon
+    if: github.ref == 'refs/heads/main'  # Solo en main
+    
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v4
+      
+      # Configurar kubectl
+      - name: ⚙️ Setup kubectl
+        uses: azure/setup-kubectl@v4
+      
+      # Configurar kubeconfig (secreto de GitHub)
+      - name: 🔐 Configurar cluster
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > kubeconfig.yaml
+          export KUBECONFIG=kubeconfig.yaml
+      
+      # Desplegar los microservicios
+      - name: 🚀 Desplegar en K8s
+        run: |
+          kubectl apply -f k8s/task-service.yaml
+          kubectl apply -f k8s/ai-service.yaml
+          kubectl apply -f k8s/api-gateway.yaml
+          kubectl apply -f k8s/ingress.yaml
+      
+      # Verificar estado del despliegue
+      - name: ✅ Verificar despliegue
+        run: |
+          kubectl rollout status deployment/task-service
+          kubectl rollout status deployment/ai-service
+          kubectl rollout status deployment/api-gateway
+      
+      # Notificar éxito (opcional)
+      - name: 📢 Notificar éxito
+        run: |
+          echo "✅ Despliegue completado exitosamente"
